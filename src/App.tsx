@@ -3,7 +3,10 @@ import { Box, Container, Typography, ToggleButton, ToggleButtonGroup, CircularPr
 import SubjectSelector from './components/SubjectSelector';
 import GraphViewer from './components/GraphViewer';
 import TableView from './components/TableView';
-import axios from 'axios';
+import Header from './components/Header';
+import Login from './components/Login';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import api from './utils/axios';
 import ThumbUpAltOutlinedIcon from '@mui/icons-material/ThumbUpAltOutlined';
 import ThumbDownAltOutlinedIcon from '@mui/icons-material/ThumbDownAltOutlined';
 import { Box as MuiBox } from '@mui/material';
@@ -34,7 +37,8 @@ export interface KnowledgeGraphData {
   topics: TopicNode[];
 }
 
-function App() {
+function AppContent() {
+  const { isAuthenticated, login, authLoading } = useAuth();
   const [tab, setTab] = useState(0);
   // View tab state
   const [subject, setSubject] = useState<string | null>(null);
@@ -63,13 +67,56 @@ function App() {
   const [quickQuestionsLoading, setQuickQuestionsLoading] = useState(false);
   const [quickQuestionsError, setQuickQuestionsError] = useState<string | null>(null);
 
+  // Diagnostic Questions state
+  const [diagnosticSubject, setDiagnosticSubject] = useState('');
+  const [diagnosticQuestions, setDiagnosticQuestions] = useState<any[] | null>(null);
+  const [diagnosticQuestionsLoading, setDiagnosticQuestionsLoading] = useState(false);
+  const [diagnosticQuestionsError, setDiagnosticQuestionsError] = useState<string | null>(null);
+
+  // Concept Lessons state
+  const [lessonsSubject, setLessonsSubject] = useState('');
+  const [lessons, setLessons] = useState<any[] | null>(null);
+  const [lessonsLoading, setLessonsLoading] = useState(false);
+  const [lessonsError, setLessonsError] = useState<string | null>(null);
+  const [lessonsForm, setLessonsForm] = useState({
+    grade: '10',
+    mastery_level: 'beginner',
+    num_lessons: 3
+  });
+
+  // Socratic Questions state
+  const [socraticSubject, setSocraticSubject] = useState('');
+  const [socraticQuestions, setSocraticQuestions] = useState<any[] | null>(null);
+  const [socraticQuestionsLoading, setSocraticQuestionsLoading] = useState(false);
+  const [socraticQuestionsError, setSocraticQuestionsError] = useState<string | null>(null);
+  const [socraticForm, setSocraticForm] = useState({
+    question_type: 'open_ended',
+    num_questions: 5
+  });
+
+  // Socratic Questions from Practice Questions state
+  const [socraticFromPractice, setSocraticFromPractice] = useState<{ [lessonIndex: number]: any[] }>({});
+  const [socraticFromPracticeLoading, setSocraticFromPracticeLoading] = useState<{ [lessonIndex: number]: boolean }>({});
+  const [socraticFromPracticeError, setSocraticFromPracticeError] = useState<string | null>(null);
+
+  // My Subjects state
+  const [mySubjects, setMySubjects] = useState<any[] | null>(null);
+  const [mySubjectsLoading, setMySubjectsLoading] = useState(false);
+  const [mySubjectsError, setMySubjectsError] = useState<string | null>(null);
+
+  // Hint and Scaffold state
+  const [hintData, setHintData] = useState<{ [key: number]: any }>({});
+  const [scaffoldData, setScaffoldData] = useState<{ [key: number]: any }>({});
+  const [hintLoading, setHintLoading] = useState<{ [key: number]: boolean }>({});
+  const [scaffoldLoading, setScaffoldLoading] = useState<{ [key: number]: boolean }>({});
+
   // View tab logic
   const fetchData = async (subjectName: string) => {
     setLoading(true);
     setError(null);
     setData(null);
     try {
-      const res = await axios.get(`http://localhost:8000/api/v1/knowledge-graph/subject/${encodeURIComponent(subjectName)}`);
+      const res = await api.get(`/knowledge-graph/subject/${encodeURIComponent(subjectName)}`);
       setData(res.data);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err.message || 'Failed to fetch knowledge graph');
@@ -109,11 +156,20 @@ function App() {
           formData.append('syllabus_files', file);
         }
       }
-      await axios.post('http://localhost:8000/api/v1/knowledge-graph/build', formData);
+      
+      // Debug: Log what we're sending
+      console.log('Form data being sent:', {
+        subject_name: buildForm.subjectName,
+        subject_description: buildForm.subjectDescription,
+        files_count: buildForm.files?.length || 0
+      });
+      
+      await api.post('http://localhost:8000/api/v1/knowledge-graph/build', formData);
       // After build, fetch the new graph
-      const res = await axios.get(`http://localhost:8000/api/v1/knowledge-graph/subject/${encodeURIComponent(buildForm.subjectName)}`);
+      const res = await api.get(`http://localhost:8000/api/v1/knowledge-graph/subject/${encodeURIComponent(buildForm.subjectName)}`);
       setBuildData(res.data);
     } catch (err: any) {
+      console.error('Build error:', err);
       setBuildError(err?.response?.data?.detail || err.message || 'Failed to build knowledge graph');
     } finally {
       setBuildLoading(false);
@@ -121,7 +177,7 @@ function App() {
   };
   const handleBuildRefresh = () => {
     if (buildForm.subjectName) {
-      axios.get(`http://localhost:8000/api/v1/knowledge-graph/subject/${encodeURIComponent(buildForm.subjectName)}`)
+      api.get(`http://localhost:8000/api/v1/knowledge-graph/subject/${encodeURIComponent(buildForm.subjectName)}`)
         .then(res => setBuildData(res.data));
     }
   };
@@ -131,7 +187,7 @@ function App() {
     setQuestionsError(null);
     setQuestions(null);
     try {
-      const res = await axios.post(`http://localhost:8000/api/v1/knowledge-graph/subject/${encodeURIComponent(buildForm.subjectName)}/generate-questions`);
+      const res = await api.post(`http://localhost:8000/api/v1/knowledge-graph/subject/${encodeURIComponent(buildForm.subjectName)}/generate-questions`);
       let newQuestions = [];
       if (Array.isArray(res.data.questions)) {
         newQuestions = res.data.questions;
@@ -180,7 +236,7 @@ function App() {
     setOptimizerSuccess(null);
     try {
       const dataset = buildOptimizerDataset();
-      await axios.post(`http://localhost:8000/api/v1/knowledge-graph/subject/${encodeURIComponent(buildForm.subjectName)}/optimize-question-generator`, dataset, {
+      await api.post(`http://localhost:8000/api/v1/knowledge-graph/subject/${encodeURIComponent(buildForm.subjectName)}/optimize-question-generator`, dataset, {
         headers: { 'Content-Type': 'application/json' }
       });
       setOptimizerSuccess('Optimization complete! Generating new questions...');
@@ -235,38 +291,220 @@ function App() {
     setQuickQuestionsError(null);
     setQuickQuestions(null);
     try {
-      const res = await axios.post(`http://localhost:8000/api/v1/knowledge-graph/subject/${encodeURIComponent(quickSubject)}/generate-questions`);
+      const res = await api.post(`http://localhost:8000/api/v1/knowledge-graph/subject/${encodeURIComponent(quickSubject)}/generate-questions`);
       let newQuestions = [];
       if (Array.isArray(res.data.questions)) {
         newQuestions = res.data.questions;
-      } else if (Array.isArray(res.data)) {
-        newQuestions = res.data;
+      } else if (res.data.questions && typeof res.data.questions === 'string') {
+        try {
+          newQuestions = JSON.parse(res.data.questions);
+        } catch (e) {
+          newQuestions = [{ problem_statement: res.data.questions }];
+        }
       }
       setQuickQuestions(newQuestions);
-      setQuestionFeedback({}); // Reset thumbs
-      if (!Array.isArray(res.data.questions) && !Array.isArray(res.data)) {
-        setQuickQuestionsError(
-          typeof res.data === 'object' && res.data !== null && res.data.error
-            ? res.data.error
-            : 'Failed to generate questions'
-        );
-      }
     } catch (err: any) {
       setQuickQuestionsError(err?.response?.data?.detail || err.message || 'Failed to generate questions');
-      setQuickQuestions([]);
-      setQuestionFeedback({}); // Reset thumbs
     } finally {
       setQuickQuestionsLoading(false);
     }
   };
 
+  // Diagnostic Questions handlers
+  const handleGenerateDiagnosticQuestions = async () => {
+    setDiagnosticQuestionsLoading(true);
+    setDiagnosticQuestionsError(null);
+    setDiagnosticQuestions(null);
+    
+    try {
+      // Single API call - backend now handles all difficulty levels automatically
+      const res = await api.post(`http://localhost:8000/api/v1/knowledge-graph/subject/${encodeURIComponent(diagnosticSubject)}/generate-diagnostic-questions`);
+      
+      let questions = [];
+      if (Array.isArray(res.data.diagnostic_questions)) {
+        questions = res.data.diagnostic_questions;
+      } else if (res.data.diagnostic_questions && typeof res.data.diagnostic_questions === 'string') {
+        try {
+          questions = JSON.parse(res.data.diagnostic_questions);
+        } catch (e) {
+          questions = [{ diagnostic_question: res.data.diagnostic_questions }];
+        }
+      }
+      
+      setDiagnosticQuestions(questions);
+    } catch (err: any) {
+      setDiagnosticQuestionsError(err?.response?.data?.detail || err.message || 'Failed to generate diagnostic questions');
+    } finally {
+      setDiagnosticQuestionsLoading(false);
+    }
+  };
+
+  // Concept Lessons handlers
+  const handleLessonsFormChange = (field: string, value: any) => {
+    setLessonsForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleGenerateLessons = async () => {
+    setLessonsLoading(true);
+    setLessonsError(null);
+    setLessons(null);
+    try {
+      const res = await api.post(`http://localhost:8000/api/v1/knowledge-graph/subject/${encodeURIComponent(lessonsSubject)}/generate-concept-lessons`);
+      let newLessons = [];
+      if (Array.isArray(res.data.lessons)) {
+        newLessons = res.data.lessons;
+      } else if (res.data.lessons && typeof res.data.lessons === 'string') {
+        try {
+          newLessons = JSON.parse(res.data.lessons);
+        } catch (e) {
+          newLessons = [{ lesson_content: res.data.lessons }];
+        }
+      }
+      setLessons(newLessons);
+    } catch (err: any) {
+      setLessonsError(err?.response?.data?.detail || err.message || 'Failed to generate lessons');
+    } finally {
+      setLessonsLoading(false);
+    }
+  };
+
+  // Socratic Questions handlers
+  const handleSocraticFormChange = (field: string, value: any) => {
+    setSocraticForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleGenerateSocraticQuestions = async () => {
+    setSocraticQuestionsLoading(true);
+    setSocraticQuestionsError(null);
+    setSocraticQuestions(null);
+    try {
+      const res = await api.post(`http://localhost:8000/api/v1/knowledge-graph/subject/${encodeURIComponent(socraticSubject)}/generate-socratic-questions`, socraticForm);
+      let newQuestions = [];
+      if (Array.isArray(res.data.socratic_questions)) {
+        newQuestions = res.data.socratic_questions;
+      } else if (res.data.socratic_questions && typeof res.data.socratic_questions === 'string') {
+        try {
+          newQuestions = JSON.parse(res.data.socratic_questions);
+        } catch (e) {
+          newQuestions = [{ socratic_question: res.data.socratic_questions }];
+        }
+      }
+      setSocraticQuestions(newQuestions);
+    } catch (err: any) {
+      setSocraticQuestionsError(err?.response?.data?.detail || err.message || 'Failed to generate socratic questions');
+    } finally {
+      setSocraticQuestionsLoading(false);
+    }
+  };
+
+  const handleGenerateSocraticFromPractice = async (practiceContent: string, conceptName: string, lessonIndex: number) => {
+    setSocraticFromPracticeLoading(prev => ({ ...prev, [lessonIndex]: true }));
+    setSocraticFromPracticeError(null);
+    try {
+      const res = await api.post(`http://localhost:8000/api/v1/knowledge-graph/generate-socratic-from-practice`, {
+        practice_content: practiceContent,
+        concept_name: conceptName,
+        question_type: 'open_ended'
+      });
+      let newQuestions: any[] = [];
+      if (Array.isArray(res.data.socratic_questions)) {
+        newQuestions = res.data.socratic_questions;
+      } else if (res.data.socratic_questions && typeof res.data.socratic_questions === 'string') {
+        try {
+          newQuestions = JSON.parse(res.data.socratic_questions);
+        } catch (e) {
+          newQuestions = [{ socratic_question: res.data.socratic_questions }];
+        }
+      }
+      setSocraticFromPractice(prev => ({ ...prev, [lessonIndex]: newQuestions }));
+    } catch (err: any) {
+      setSocraticFromPracticeError(err?.response?.data?.detail || err.message || 'Failed to generate socratic questions from practice');
+    } finally {
+      setSocraticFromPracticeLoading(prev => ({ ...prev, [lessonIndex]: false }));
+    }
+  };
+
+  // Hint and Scaffold handlers
+  const handleGenerateHint = async (questionIndex: number, problem: string) => {
+    setHintLoading(prev => ({ ...prev, [questionIndex]: true }));
+    try {
+      const res = await api.post('http://localhost:8000/api/v1/knowledge-graph/generate-hints', {
+        problem: problem,
+        grade: 10
+      });
+      setHintData(prev => ({ ...prev, [questionIndex]: res.data }));
+    } catch (err: any) {
+      console.error('Failed to generate hint:', err);
+    } finally {
+      setHintLoading(prev => ({ ...prev, [questionIndex]: false }));
+    }
+  };
+
+  const handleGenerateScaffold = async (questionIndex: number, problem: string) => {
+    setScaffoldLoading(prev => ({ ...prev, [questionIndex]: true }));
+    try {
+      const res = await api.post('http://localhost:8000/api/v1/knowledge-graph/generate-scaffold', {
+        problem_statement: problem,
+        grade_level: '10',
+        subject_context: 'Mathematics',
+        learning_objectives: 'Solve the given problem step by step'
+      });
+      setScaffoldData(prev => ({ ...prev, [questionIndex]: res.data }));
+    } catch (err: any) {
+      console.error('Failed to generate scaffold:', err);
+    } finally {
+      setScaffoldLoading(prev => ({ ...prev, [questionIndex]: false }));
+    }
+  };
+
+  const handleFetchMySubjects = async () => {
+    try {
+      setMySubjectsLoading(true);
+      setMySubjectsError(null);
+      
+      const response = await api.get('/knowledge-graph/my-subjects');
+      setMySubjects(response.data);
+    } catch (error: any) {
+      console.error('Error fetching my subjects:', error);
+      setMySubjectsError(error.response?.data?.detail || 'Failed to fetch my subjects');
+    } finally {
+      setMySubjectsLoading(false);
+    }
+  };
+
+  // Show loading while auth is initializing
+  if (authLoading) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  // Show login if not authenticated
+  if (!isAuthenticated) {
+    return <Login onLoginSuccess={login} />;
+  }
+
+  // Main app content when authenticated
   return (
     <Container maxWidth="md" sx={{ py: 4 }}>
       <Typography variant="h4" gutterBottom>Knowledge Graph Viewer</Typography>
-      <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
+      <Tabs 
+        value={tab} 
+        onChange={(_, v) => setTab(v)} 
+        sx={{ mb: 2 }}
+        variant="scrollable"
+        scrollButtons="auto"
+        allowScrollButtonsMobile
+      >
         <Tab label="View Knowledge Graph" />
         <Tab label="Build Knowledge Graph" />
         <Tab label="Generate Questions by Subject" />
+        <Tab label="Diagnostic Questions" />
+        <Tab label="Concept Lessons" />
+        <Tab label="Socratic Questions" />
+        <Tab label="My Subjects" />
       </Tabs>
       {tab === 0 && (
         <>
@@ -351,8 +589,10 @@ function App() {
                           <TableCell>Difficulty</TableCell>
                           <TableCell>Max Point</TableCell>
                           <TableCell>Rubric</TableCell>
-                          <TableCell>Feedback</TableCell>
-                          <TableCell>Edit</TableCell>
+                                                  <TableCell>Feedback</TableCell>
+                        <TableCell>Hint</TableCell>
+                        <TableCell>Scaffold</TableCell>
+                        <TableCell>Edit</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -401,6 +641,46 @@ function App() {
                                   sx={{ cursor: 'pointer', color: questionFeedback[i] === 'down' ? '#f44336' : '#aaa', ml: 1 }}
                                   onClick={() => handleThumb(i, 'down')}
                                 />
+                              </TableCell>
+                              <TableCell>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  onClick={() => handleGenerateHint(i, q.problem_statement || q.question || q.text || '')}
+                                  disabled={hintLoading[i]}
+                                >
+                                  {hintLoading[i] ? 'Loading...' : 'Hint'}
+                                </Button>
+                                {hintData[i] && (
+                                  <Box mt={1} sx={{ maxWidth: 200 }}>
+                                    <Typography variant="caption" color="text.secondary">Hints:</Typography>
+                                    {hintData[i].hints && Array.isArray(hintData[i].hints) && hintData[i].hints.map((hint: any, idx: number) => (
+                                      <Typography key={idx} variant="body2" sx={{ fontSize: '0.75rem', mt: 0.5 }}>
+                                        {hint.level}. {hint.content}
+                                      </Typography>
+                                    ))}
+                                  </Box>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  onClick={() => handleGenerateScaffold(i, q.problem_statement || q.question || q.text || '')}
+                                  disabled={scaffoldLoading[i]}
+                                >
+                                  {scaffoldLoading[i] ? 'Loading...' : 'Scaffold'}
+                                </Button>
+                                {scaffoldData[i] && (
+                                  <Box mt={1} sx={{ maxWidth: 200 }}>
+                                    <Typography variant="caption" color="text.secondary">Steps:</Typography>
+                                    {scaffoldData[i].scaffold && Array.isArray(scaffoldData[i].scaffold) && scaffoldData[i].scaffold.map((step: any, idx: number) => (
+                                      <Typography key={idx} variant="body2" sx={{ fontSize: '0.75rem', mt: 0.5 }}>
+                                        {idx + 1}. {step.step_description}
+                                      </Typography>
+                                    ))}
+                                  </Box>
+                                )}
                               </TableCell>
                               <TableCell>
                                 <IconButton size="small" color="primary" onClick={() => handleEditQOpen(i)}>
@@ -508,11 +788,26 @@ function App() {
               onChange={e => setQuickSubject(e.target.value)}
               size="small"
             />
-            <Button variant="contained" onClick={handleQuickGenerateQuestions} disabled={quickQuestionsLoading || !quickSubject}>
-              {quickQuestionsLoading ? 'Generating...' : 'Generate Questions'}
+            <Button 
+              variant="contained" 
+              onClick={handleQuickGenerateQuestions} 
+              disabled={quickQuestionsLoading || !quickSubject}
+              startIcon={quickQuestionsLoading ? <CircularProgress size={16} color="inherit" /> : null}
+            >
+              {quickQuestionsLoading ? 'Generating Questions...' : 'Generate Questions'}
             </Button>
           </Box>
           {quickQuestionsError && <Alert severity="error" sx={{ mb: 2 }}>{typeof quickQuestionsError === 'string' ? quickQuestionsError : JSON.stringify(quickQuestionsError)}</Alert>}
+          {quickQuestionsLoading && (
+            <Box display="flex" justifyContent="center" alignItems="center" py={4}>
+              <Box display="flex" flexDirection="column" alignItems="center" gap={2}>
+                <CircularProgress size={40} />
+                <Typography variant="body1" color="text.secondary">
+                  Generating questions for {quickSubject}...
+                </Typography>
+              </Box>
+            </Box>
+          )}
           {quickQuestions && quickQuestions.length > 0 && (
             <TableContainer component={Paper} sx={{ mb: 3 }}>
               <Table>
@@ -523,6 +818,8 @@ function App() {
                     <TableCell>Difficulty</TableCell>
                     <TableCell>Max Point</TableCell>
                     <TableCell>Rubric</TableCell>
+                    <TableCell>Hint</TableCell>
+                    <TableCell>Scaffold</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -558,12 +855,609 @@ function App() {
                             )) : <MuiBox sx={{ border: '1px solid #ccc', borderRadius: 1, p: 1 }}>No rubric provided.</MuiBox>}
                           </Box>
                         </TableCell>
+                        <TableCell>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => handleGenerateHint(i, q.problem_statement || q.question || q.text || '')}
+                            disabled={hintLoading[i]}
+                            startIcon={hintLoading[i] ? <CircularProgress size={12} /> : null}
+                          >
+                            {hintLoading[i] ? 'Generating...' : 'Hint'}
+                          </Button>
+                          {hintData[i] && (
+                            <Box mt={1} sx={{ maxWidth: 200 }}>
+                              <Typography variant="caption" color="text.secondary">Hints:</Typography>
+                              {hintData[i].hints && Array.isArray(hintData[i].hints) && hintData[i].hints.map((hint: any, idx: number) => (
+                                <Typography key={idx} variant="body2" sx={{ fontSize: '0.75rem', mt: 0.5 }}>
+                                  {hint.level}. {hint.content}
+                                </Typography>
+                              ))}
+                            </Box>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => handleGenerateScaffold(i, q.problem_statement || q.question || q.text || '')}
+                            disabled={scaffoldLoading[i]}
+                            startIcon={scaffoldLoading[i] ? <CircularProgress size={12} /> : null}
+                          >
+                            {scaffoldLoading[i] ? 'Generating...' : 'Scaffold'}
+                          </Button>
+                          {scaffoldData[i] && (
+                            <Box mt={1} sx={{ maxWidth: 200 }}>
+                              <Typography variant="caption" color="text.secondary">Steps:</Typography>
+                              {scaffoldData[i].scaffold && Array.isArray(scaffoldData[i].scaffold) && scaffoldData[i].scaffold.map((step: any, idx: number) => (
+                                <Typography key={idx} variant="body2" sx={{ fontSize: '0.75rem', mt: 0.5 }}>
+                                  {idx + 1}. {step.step_description}
+                                </Typography>
+                              ))}
+                            </Box>
+                          )}
+                        </TableCell>
                       </TableRow>
                     );
                   })}
                 </TableBody>
               </Table>
             </TableContainer>
+          )}
+        </Box>
+      )}
+      {tab === 3 && (
+        <Box>
+          <Typography variant="h6" gutterBottom>Generate Diagnostic Questions</Typography>
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Box display="flex" flexDirection="column" gap={2}>
+              <TextField
+                label="Subject Name"
+                value={diagnosticSubject}
+                onChange={e => setDiagnosticSubject(e.target.value)}
+                required
+                placeholder="Enter subject name (e.g., AP Calculus AB)"
+              />
+              <Typography variant="body2" color="text.secondary">
+                Will generate 6 diagnostic questions: 2 Easy, 2 Medium, 2 Hard (all Multiple Choice)
+              </Typography>
+              <Button 
+                variant="contained" 
+                onClick={handleGenerateDiagnosticQuestions} 
+                disabled={diagnosticQuestionsLoading || !diagnosticSubject}
+                startIcon={diagnosticQuestionsLoading ? <CircularProgress size={16} color="inherit" /> : null}
+              >
+                {diagnosticQuestionsLoading ? 'Generating Diagnostic Questions...' : 'Generate Diagnostic Questions'}
+              </Button>
+            </Box>
+          </Paper>
+          {diagnosticQuestionsError && <Alert severity="error" sx={{ mb: 2 }}>{typeof diagnosticQuestionsError === 'string' ? diagnosticQuestionsError : JSON.stringify(diagnosticQuestionsError)}</Alert>}
+          {diagnosticQuestionsLoading && (
+            <Box display="flex" justifyContent="center" alignItems="center" py={4}>
+              <Box display="flex" flexDirection="column" alignItems="center" gap={2}>
+                <CircularProgress size={40} />
+                <Typography variant="body1" color="text.secondary">
+                  Generating diagnostic questions for {diagnosticSubject}...
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Creating 2 Easy, 2 Medium, and 2 Hard questions
+                </Typography>
+              </Box>
+            </Box>
+          )}
+          {diagnosticQuestions && diagnosticQuestions.length > 0 && (
+            <TableContainer component={Paper} sx={{ mb: 3 }}>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>#</TableCell>
+                    <TableCell>Question</TableCell>
+                    <TableCell>Difficulty</TableCell>
+                    <TableCell>Options</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {diagnosticQuestions.map((q, i) => {
+                    const questionData = q.diagnostic_question || q;
+                    return (
+                      <TableRow key={i}>
+                        <TableCell>{i + 1}</TableCell>
+                        <TableCell>{questionData.question_text || questionData.question || ''}</TableCell>
+                        <TableCell><Chip label={questionData.difficulty || 'N/A'} size="small" /></TableCell>
+                        <TableCell>
+                          {questionData.options && Array.isArray(questionData.options) ? (
+                            <Box display="flex" flexDirection="column" gap={1}>
+                              {questionData.options.map((opt: string, idx: number) => (
+                                <Box
+                                  key={idx}
+                                  sx={{
+                                    border: '1px solid #e0e0e0',
+                                    borderRadius: '4px',
+                                    p: 1,
+                                    backgroundColor: '#fafafa',
+                                    '&:hover': {
+                                      backgroundColor: '#f0f0f0',
+                                      borderColor: '#bdbdbd'
+                                    }
+                                  }}
+                                >
+                                  <Typography variant="body2" sx={{ fontSize: '0.9rem' }}>
+                                  {String.fromCharCode(65 + idx)}. {opt}
+                                </Typography>
+                                </Box>
+                              ))}
+                            </Box>
+                          ) : (
+                            <Typography variant="body2" color="text.secondary">No options</Typography>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </Box>
+      )}
+      {tab === 4 && (
+        <Box>
+          <Typography variant="h6" gutterBottom>Generate Concept Lessons</Typography>
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Box display="flex" flexDirection="column" gap={2}>
+              <TextField
+                label="Subject Name"
+                value={lessonsSubject}
+                onChange={e => setLessonsSubject(e.target.value)}
+                required
+                placeholder="Enter subject name to generate 3 lessons"
+              />
+              <Typography variant="body2" color="text.secondary">
+                Will generate 3 lessons for Grade 8, Beginner level
+              </Typography>
+              <Button variant="contained" onClick={handleGenerateLessons} disabled={lessonsLoading || !lessonsSubject}>
+                {lessonsLoading ? 'Generating...' : 'Generate Lessons'}
+              </Button>
+            </Box>
+          </Paper>
+          {lessonsError && <Alert severity="error" sx={{ mb: 2 }}>{typeof lessonsError === 'string' ? lessonsError : JSON.stringify(lessonsError)}</Alert>}
+          {lessons && lessons.length > 0 && (
+            <Box display="flex" flexDirection="column" gap={3}>
+              {lessons.map((lesson, i) => (
+                <Paper 
+                  key={i} 
+                  sx={{ 
+                    p: 3, 
+                    border: '2px solid #e3f2fd',
+                    borderRadius: 2,
+                    backgroundColor: '#fafbfc',
+                    boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+                    '&:hover': {
+                      boxShadow: '0 6px 12px rgba(0,0,0,0.15)',
+                      borderColor: '#2196f3'
+                    }
+                  }}
+                >
+                  <Box display="flex" alignItems="center" mb={2}>
+                    <Box 
+                      sx={{ 
+                        width: 40, 
+                        height: 40, 
+                        borderRadius: '50%', 
+                        backgroundColor: '#2196f3', 
+                        color: 'white',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        mr: 2,
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      {i + 1}
+                    </Box>
+                    <Box>
+                      <Typography variant="h5" fontWeight="bold" color="primary">
+                        {lesson.title || lesson.concept_name || 'Untitled Lesson'}
+                  </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                    Concept: {lesson.concept_name} | Topic: {lesson.topic_name}
+                  </Typography>
+                    </Box>
+                  </Box>
+                  
+                  {lesson.lesson_content && (
+                    <Box mt={3}>
+                      <Typography variant="h6" gutterBottom color="primary">
+                        Lesson Steps
+                      </Typography>
+                      <Box display="flex" flexDirection="column" gap={2}>
+                        {(() => {
+                          try {
+                            const content = typeof lesson.lesson_content === 'string' 
+                              ? JSON.parse(lesson.lesson_content) 
+                              : lesson.lesson_content;
+                            
+                            if (content.explanation && content.explanation.steps) {
+                              return content.explanation.steps
+                                .sort((a: any, b: any) => a.step_order - b.step_order)
+                                .map((step: any, stepIndex: number) => (
+                                  <Paper
+                                    key={stepIndex}
+                                    sx={{
+                                      p: 2,
+                                      border: step.isSocraticQuestion 
+                                        ? '2px solid #ff9800' 
+                                        : '2px solid #e3f2fd',
+                                      borderRadius: 2,
+                                      backgroundColor: step.isSocraticQuestion 
+                                        ? '#fff3e0' 
+                                        : '#fafbfc',
+                                      position: 'relative',
+                                      '&:hover': {
+                                        boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+                                        borderColor: step.isSocraticQuestion 
+                                          ? '#f57c00' 
+                                          : '#2196f3'
+                                      }
+                                    }}
+                                  >
+                                    <Box display="flex" alignItems="center" mb={1}>
+                                      <Box
+                                        sx={{
+                                          width: 32,
+                                          height: 32,
+                                          borderRadius: '50%',
+                                          backgroundColor: step.isSocraticQuestion 
+                                            ? '#ff9800' 
+                                            : '#2196f3',
+                                          color: 'white',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          mr: 2,
+                                          fontWeight: 'bold',
+                                          fontSize: '14px'
+                                        }}
+                                      >
+                                        {step.step_order}
+                                      </Box>
+                                      <Typography variant="h6" fontWeight="bold" color="primary">
+                                        {step.step_type}
+                                      </Typography>
+                                      {step.isSocraticQuestion && (
+                                        <Chip
+                                          label="Practice Question"
+                                          size="small"
+                                          sx={{
+                                            ml: 2,
+                                            backgroundColor: '#ff9800',
+                                            color: 'white'
+                                          }}
+                                        />
+                                      )}
+                                    </Box>
+                                    <Typography variant="body1" sx={{ pl: 4 }}>
+                                      {step.content}
+                                    </Typography>
+                                    {step.isSocraticQuestion && (
+                                      <Box sx={{ pl: 4, mt: 2 }}>
+                                        <Button
+                                          variant="outlined"
+                                          size="small"
+                                          onClick={() => {
+                                            // Extract concept name from lesson title or use a default
+                                            const conceptName = lesson.concept_name || lesson.title || 'Unknown Concept';
+                                            handleGenerateSocraticFromPractice(step.content, conceptName, i);
+                                          }}
+                                          disabled={socraticFromPracticeLoading[i] || false}
+                                          startIcon={socraticFromPracticeLoading[i] ? <CircularProgress size={16} /> : null}
+                                          sx={{
+                                            borderColor: '#ff9800',
+                                            color: '#ff9800',
+                                            '&:hover': {
+                                              borderColor: '#f57c00',
+                                              backgroundColor: '#fff3e0'
+                                            }
+                                          }}
+                                        >
+                                          {socraticFromPracticeLoading[i] ? 'Generating...' : 'Generate Socratic Questions'}
+                                        </Button>
+                                      </Box>
+                                    )}
+                                  </Paper>
+                                ));
+                            } else {
+                              // Fallback for non-structured content
+                              return (
+                                <Paper sx={{ p: 3, border: '1px solid #e0e0e0', borderRadius: 2, backgroundColor: 'white' }}>
+                                  <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: '14px' }}>
+                          {JSON.stringify(lesson.lesson_content, null, 2)}
+                        </pre>
+                                </Paper>
+                              );
+                            }
+                          } catch (e) {
+                            // Fallback for parsing errors
+                            return (
+                              <Paper sx={{ p: 3, border: '1px solid #e0e0e0', borderRadius: 2, backgroundColor: 'white' }}>
+                                <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: '14px' }}>
+                                  {JSON.stringify(lesson.lesson_content, null, 2)}
+                                </pre>
+                              </Paper>
+                            );
+                          }
+                        })()}
+                      </Box>
+                    </Box>
+                  )}
+                  
+                  {lesson.example_question && (
+                    <Box mt={3}>
+                      <Typography variant="h6" gutterBottom color="primary">
+                        Example Question
+                      </Typography>
+                      <Box sx={{ 
+                        border: '1px solid #e0e0e0', 
+                        borderRadius: 2, 
+                        p: 3, 
+                        backgroundColor: 'white'
+                      }}>
+                        <Typography variant="body1">
+                        {lesson.example_question}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  )}
+                  
+                  {/* Display Socratic Questions within this lesson */}
+                  {socraticFromPractice[i] && socraticFromPractice[i].length > 0 && (
+                    <Box mt={3}>
+                      <Typography variant="h6" gutterBottom color="primary">
+                        Generated Socratic Questions
+                      </Typography>
+                      <Box display="flex" flexDirection="column" gap={2}>
+                        {socraticFromPractice[i].map((question: any, qIndex: number) => (
+                          <Paper
+                            key={qIndex}
+                            sx={{
+                              p: 3,
+                              border: '2px solid #4caf50',
+                              borderRadius: 2,
+                              backgroundColor: '#f1f8e9',
+                              '&:hover': {
+                                boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+                                borderColor: '#2e7d32'
+                              }
+                            }}
+                          >
+                            <Box display="flex" alignItems="center" mb={2}>
+                              <Box
+                                sx={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: '50%',
+                                  backgroundColor: '#4caf50',
+                                  color: 'white',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  mr: 2,
+                                  fontWeight: 'bold',
+                                  fontSize: '14px'
+                                }}
+                              >
+                                {qIndex + 1}
+                              </Box>
+                              <Typography variant="h6" fontWeight="bold" color="primary">
+                                Socratic Question {qIndex + 1}
+                              </Typography>
+                            </Box>
+                            <Typography variant="body1" sx={{ pl: 4 }}>
+                              {question.socratic_question || question}
+                            </Typography>
+                            {question.question_options && Array.isArray(question.question_options) && question.question_options.length > 0 && (
+                              <Box mt={2} pl={4}>
+                                <Paper
+                                  sx={{
+                                    p: 2,
+                                    border: '1px solid #e0e0e0',
+                                    borderRadius: 2,
+                                    backgroundColor: '#fafafa',
+                                    '&:hover': {
+                                      backgroundColor: '#f5f5f5',
+                                      borderColor: '#bdbdbd'
+                                    }
+                                  }}
+                                >
+                                  <Typography variant="subtitle1" fontWeight="bold" gutterBottom color="primary">
+                                    Multiple Choice Options:
+                                  </Typography>
+                                  <Box display="flex" flexDirection="column" gap={1}>
+                                    {question.question_options.map((opt: string, idx: number) => (
+                                      <Box
+                                        key={idx}
+                                        sx={{
+                                          border: '1px solid #e0e0e0',
+                                          borderRadius: '4px',
+                                          p: 1.5,
+                                          backgroundColor: 'white',
+                                          '&:hover': {
+                                            backgroundColor: '#f0f0f0',
+                                            borderColor: '#bdbdbd'
+                                          }
+                                        }}
+                                      >
+                                        <Typography variant="body2" sx={{ fontSize: '0.9rem' }}>
+                                          {String.fromCharCode(65 + idx)}. {opt}
+                                        </Typography>
+                                      </Box>
+                                    ))}
+                                  </Box>
+                                </Paper>
+                    </Box>
+                  )}
+                </Paper>
+              ))}
+                      </Box>
+            </Box>
+                  )}
+                </Paper>
+              ))}
+            </Box>
+          )}
+          
+          {/* Display Socratic Questions from Practice */}
+          {socraticFromPracticeError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {typeof socraticFromPracticeError === 'string' ? socraticFromPracticeError : JSON.stringify(socraticFromPracticeError)}
+            </Alert>
+          )}
+        </Box>
+      )}
+      {tab === 5 && (
+        <Box>
+          <Typography variant="h6" gutterBottom>Generate Socratic Questions</Typography>
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Box display="flex" flexDirection="column" gap={2}>
+              <TextField
+                label="Subject Name"
+                value={socraticSubject}
+                onChange={e => setSocraticSubject(e.target.value)}
+                required
+              />
+              <Box display="flex" gap={2}>
+                <FormControl fullWidth>
+                  <InputLabel>Question Type</InputLabel>
+                  <Select
+                    value={socraticForm.question_type}
+                    label="Question Type"
+                    onChange={e => handleSocraticFormChange('question_type', e.target.value)}
+                  >
+                    <MenuItem value="open_ended">Open Ended</MenuItem>
+                    <MenuItem value="multiple_choice">Multiple Choice</MenuItem>
+                  </Select>
+                </FormControl>
+                <TextField
+                  label="Number of Questions"
+                  type="number"
+                  value={socraticForm.num_questions}
+                  onChange={e => handleSocraticFormChange('num_questions', parseInt(e.target.value))}
+                  sx={{ width: 150 }}
+                />
+              </Box>
+              <Button variant="contained" onClick={handleGenerateSocraticQuestions} disabled={socraticQuestionsLoading || !socraticSubject}>
+                {socraticQuestionsLoading ? 'Generating...' : 'Generate Socratic Questions'}
+              </Button>
+            </Box>
+          </Paper>
+          {socraticQuestionsError && <Alert severity="error" sx={{ mb: 2 }}>{typeof socraticQuestionsError === 'string' ? socraticQuestionsError : JSON.stringify(socraticQuestionsError)}</Alert>}
+          {socraticQuestions && socraticQuestions.length > 0 && (
+            <TableContainer component={Paper} sx={{ mb: 3 }}>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>#</TableCell>
+                    <TableCell>Concept</TableCell>
+                    <TableCell>Socratic Question</TableCell>
+                    <TableCell>Type</TableCell>
+                    <TableCell>Options</TableCell>
+                    <TableCell>Reasoning</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {socraticQuestions.map((q, i) => (
+                    <TableRow key={i}>
+                      <TableCell>{i + 1}</TableCell>
+                      <TableCell>{q.concept_name || 'N/A'}</TableCell>
+                      <TableCell>{q.socratic_question || ''}</TableCell>
+                      <TableCell><Chip label={socraticForm.question_type} size="small" /></TableCell>
+                      <TableCell>
+                        {q.question_options && Array.isArray(q.question_options) ? (
+                          <Box display="flex" flexDirection="column" gap={0.5}>
+                            {q.question_options.map((opt: string, idx: number) => (
+                              <Typography key={idx} variant="body2" sx={{ fontSize: '0.8rem' }}>
+                                {String.fromCharCode(65 + idx)}. {opt}
+                              </Typography>
+                            ))}
+                          </Box>
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">No options</Typography>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {q.reasoning || 'No reasoning provided'}
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </Box>
+      )}
+      {tab === 6 && (
+        <Box>
+          <Typography variant="h6" gutterBottom>My Subjects</Typography>
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Box display="flex" flexDirection="column" gap={2}>
+              <Button 
+                variant="contained" 
+                onClick={handleFetchMySubjects} 
+                disabled={mySubjectsLoading}
+              >
+                {mySubjectsLoading ? 'Loading...' : 'Load My Subjects'}
+              </Button>
+            </Box>
+          </Paper>
+          {mySubjectsError && <Alert severity="error" sx={{ mb: 2 }}>{mySubjectsError}</Alert>}
+          {mySubjects && mySubjects.length > 0 && (
+            <TableContainer component={Paper} sx={{ mb: 3 }}>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Subject Name</TableCell>
+                    <TableCell>Description</TableCell>
+                    <TableCell>Topics</TableCell>
+                    <TableCell>Concepts</TableCell>
+                    <TableCell>Last Update</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {mySubjects.map((subject, i) => (
+                    <TableRow key={i}>
+                      <TableCell>
+                        <Typography variant="body1" fontWeight="bold">
+                          {subject.name}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" sx={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {subject.description || 'No description'}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Chip label={subject.topic_total} color="primary" size="small" />
+                      </TableCell>
+                      <TableCell>
+                        <Chip label={subject.concept_total} color="secondary" size="small" />
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color="text.secondary">
+                          {subject.update_at ? new Date(subject.update_at).toLocaleString() : 'Never updated'}
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+          {mySubjects && mySubjects.length === 0 && (
+            <Alert severity="info">
+              You haven't created any subjects yet. Use the "Build Knowledge Graph" tab to create your first subject.
+            </Alert>
           )}
         </Box>
       )}
@@ -592,6 +1486,15 @@ function convertToGraphViewerData(data: any) {
     }
   }
   return { nodes, edges };
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <Header />
+      <AppContent />
+    </AuthProvider>
+  );
 }
 
 export default App;
