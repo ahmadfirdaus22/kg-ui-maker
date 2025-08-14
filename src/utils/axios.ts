@@ -2,6 +2,7 @@ import axios from 'axios';
 
 // Create axios instance with base configuration
 const api = axios.create({
+  // baseURL: 'https://api.lernit.tech/api/v1',
   baseURL: 'http://localhost:8000/api/v1',
   // Remove default Content-Type to allow FormData to set its own
 });

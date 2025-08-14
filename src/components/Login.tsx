@@ -10,7 +10,7 @@ import {
   Container
 } from '@mui/material';
 import { LockOutlined } from '@mui/icons-material';
-import axios from 'axios';
+import api from '../utils/axios';
 
 interface LoginProps {
   onLoginSuccess: (token: string, user: any) => void;
@@ -44,7 +44,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     setError(null);
 
     try {
-      const response = await axios.post('http://localhost:8000/api/v1/auth/login', {
+      const response = await api.post('/auth/login', {
         email: form.email,
         password: form.password
       });
